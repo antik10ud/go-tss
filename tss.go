@@ -1,4 +1,4 @@
-// The tss package provides a core implementation of Threshold Secret Sharing (TSS)  http://tools.ietf.org/html/draft-mcgrew-tss-03
+// Package tss provides a core implementation of Threshold Secret Sharing (TSS)  http://tools.ietf.org/html/draft-mcgrew-tss-03
 // It uses a finite field GF(256) instead of Shamir scheme using large integers modulo a large prime number.
 // Max number of shares is 255, max secret key bytes is 65535.
 package tss
@@ -9,8 +9,12 @@ import (
 	"fmt"
 )
 
-const MaxSecretBytes = 65536
-const MaxShares = 255
+const (
+	// MaxSecretBytes determine the max secret size in order to limit dos
+	MaxSecretBytes = 65536
+	// MaxShares specify the maximum number of shares possible by algorithm design
+	MaxShares = 255
+)
 
 // The expOp "const" is the exponential function table  in GF(256)
 // The operation of raising a field element X to a power i, where i is a
