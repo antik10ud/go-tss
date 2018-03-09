@@ -23,12 +23,13 @@ const (
 	MaxShares = 255
 )
 
+//Share is a single share
 type Share []byte
 
+//ShareSet is a set of shares used to recover the secret or returned when creating the shares from the secret
 type ShareSet []Share
 
 var (
-	//DivisionByZeroError = errors.New("division by zero")
 	ErrTooFewShares     = errors.New("too few shares")
 	ErrSecretRequired   = errors.New("some secret is required")
 	ErrSecretTooShort   = errors.New("secret too short")
@@ -149,7 +150,7 @@ func poly(i int, u []byte) byte {
 // two arrays U and V, each consisting of M octets, and returns a single octet
 // note this function does not check if arrays are of the same length
 func interpolate(u []byte, v []byte) byte {
-	var r byte = 0
+	var r byte
 	for i, m := 0, len(u); i < m; i++ {
 		r = add(r, mul(poly(i, u), v[i]))
 	}
@@ -209,7 +210,7 @@ func erase(a []byte) {
 }
 
 func eval(x byte, a []byte) byte {
-	var r byte = 0
+	var r byte
 	var xi byte = 1
 	for i := range a {
 		r = add(r, mul(a[i], xi))
