@@ -1,6 +1,8 @@
 Go Threshold Secret Sharing
 ===
 
+WARNING: EXPERIMENTAL CODE
+
 [![Build Status](https://travis-ci.org/antik10ud/go-tss.svg?branch=master)](https://travis-ci.org/antik10ud/go-tss)
 
 ## Description

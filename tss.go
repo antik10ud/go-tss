@@ -6,14 +6,36 @@ package tss
 import (
 	"crypto/rand"
 	"errors"
-	"fmt"
 )
 
 const (
+	// MinSecretBytes determine the min secret size
+	MinSecretBytes = 32
 	// MaxSecretBytes determine the max secret size in order to limit dos
-	MaxSecretBytes = 65536
+	MaxSecretBytes = 65534
+	// MaxShareBytes determine the max share size
+	MaxShareBytes = MaxSecretBytes + 1
+	// MinShareBytes determine the min share size
+	MinShareBytes = MinSecretBytes + 1
+	// MinShares specify the minimum number of shares
+	MinShares = 2
 	// MaxShares specify the maximum number of shares possible by algorithm design
 	MaxShares = 255
+)
+
+type Share []byte
+
+type ShareSet []Share
+
+var (
+	//DivisionByZeroError = errors.New("division by zero")
+	ErrTooFewShares     = errors.New("too few shares")
+	ErrSecretRequired   = errors.New("some secret is required")
+	ErrSecretTooShort   = errors.New("secret too short")
+	ErrSecretTooLarge   = errors.New("secret too large")
+	ErrTooManyShares    = errors.New("too many shares")
+	ErrInvalidThreshold = errors.New("invalid threshold")
+	ErrInvalidShare     = errors.New("invalid share")
 )
 
 // The expOp "const" is the exponential function table  in GF(256)
@@ -83,6 +105,7 @@ var logOp = [...]int{
 
 // The addition operation returns the bitwise exclusive-or of its operands.
 // The subtraction operation is identical, because the field  has characteristic two.
+// inline func
 func add(a byte, b byte) byte {
 	return a ^ b
 }
@@ -90,6 +113,8 @@ func add(a byte, b byte) byte {
 // The multiplication operation takes two elements X and Y as input and
 // proceeds as follows.  If either X or Y is equal to 0x00, then the
 // operation returns 0x00.
+// this function should inline
+// inline func
 func mul(x byte, y byte) byte {
 	if x == 0 || y == 0 {
 		return 0
@@ -100,13 +125,11 @@ func mul(x byte, y byte) byte {
 // The division operation takes a dividend X and a divisor Y as input
 //  and computes X divided by Y as follows.  If X is equal to 0x00, then
 //  the operation returns 0x00.  If Y is equal to 0x00, then the input is
-//  invalid, and an error condition occurs.
+//  invalid and zero ir returned.
+// inline func
 func div(x byte, y byte) byte {
-	if x == 0 {
+	if x == 0 || y == 0 {
 		return 0
-	}
-	if y == 0 {
-		panic("division by zero")
 	}
 	return expOp[0xff+logOp[x]-logOp[y]]
 }
@@ -122,8 +145,9 @@ func poly(i int, u []byte) byte {
 	return r
 }
 
-// interpolate is the interpolation function. This function takes as  input
+// interpolate is the interpolation function. This function takes as input
 // two arrays U and V, each consisting of M octets, and returns a single octet
+// note this function does not check if arrays are of the same length
 func interpolate(u []byte, v []byte) byte {
 	var r byte = 0
 	for i, m := 0, len(u); i < m; i++ {
@@ -134,48 +158,48 @@ func interpolate(u []byte, v []byte) byte {
 
 // CreateShares generate a set of 'shares'  from the 'secret' provided. Secret
 // reconstruction will require 'threshold' shares in order to reconstruct correctly a secret.
-// Max secret  len is  65536. Min secret len is 1
+// Max secret  len is  65536. Min secret len is 32 bytes
 // Max number of shares is 255
-func CreateShares(secret []byte, shares int, threshold int) (share [][]byte, err error) {
-	if secret == nil {
-		return nil, errors.New("some secret is required")
+func CreateShares(secret []byte, sharesCount int, threshold int) (shares ShareSet, err error) {
+	if len(secret) == 0 {
+		return nil, ErrSecretRequired
 	}
-	var m = len(secret)
-	if m == 0 {
-		return nil, errors.New("too short secret: 0")
+	secretSize := len(secret)
+	if secretSize < MinSecretBytes {
+		return nil, ErrSecretTooShort
 	}
-	if m > MaxSecretBytes {
-		return nil, fmt.Errorf("too large secret: %d", m)
+	if secretSize > MaxSecretBytes {
+		return nil, ErrSecretTooLarge
 	}
-	if shares < 1 {
-		return nil, fmt.Errorf("too few shares: %d", shares)
+	if sharesCount < MinShares {
+		return nil, ErrTooFewShares
 	}
-	if shares > MaxShares {
-		return nil, fmt.Errorf("too many shares: %d", shares)
+	if sharesCount > MaxShares {
+		return nil, ErrTooManyShares
 	}
-	if threshold > shares {
-		return nil, fmt.Errorf("invalid threshold  %d greater than %d shares  ", threshold, shares)
+	if threshold > sharesCount {
+		return nil, ErrInvalidThreshold
 	}
 
-	share = make([][]byte, shares)
-	for i := 0; i < shares; i++ {
-		share[i] = make([]byte, m+1)
-		share[i][0] = (byte)(i + 1)
+	shares = make(ShareSet, sharesCount)
+	for i := 0; i < sharesCount; i++ {
+		shares[i] = make([]byte, secretSize+1)
+		shares[i][0] = (byte)(i + 1)
 	}
 
 	a := make([]byte, threshold)
 	defer erase(a)
-	for i := 0; i < m; i++ {
+	for i := 0; i < secretSize; i++ {
 		_, err := rand.Read(a)
 		if err != nil {
 			return nil, err
 		}
 		a[0] = secret[i]
-		for j := 0; j < shares; j++ {
-			share[j][i+1] = eval(share[j][0], a)
+		for j := 0; j < sharesCount; j++ {
+			shares[j][i+1] = eval(shares[j][0], a)
 		}
 	}
-	return share, nil
+	return shares, nil
 }
 
 func erase(a []byte) {
@@ -194,65 +218,48 @@ func eval(x byte, a []byte) byte {
 	return r
 }
 
-//RecoverSecret reconstructs a secret from a list of shares
-func RecoverSecret(shares [][]byte) (secret []byte, err error) {
-	if shares == nil {
-		return nil, errors.New("some shares are required")
+//RecoverSecret reconstructs a secret from a list of shares.
+//The share at index 0 determines the secret size to be reconstructed, so index 0 is required.
+//All shares must be of the same size.
+func RecoverSecret(shares ShareSet) (secret []byte, err error) {
+	sharesCount := len(shares)
+	if sharesCount < MinShares {
+		return nil, ErrTooFewShares
 	}
-	var threshold = len(shares)
-	if threshold == 0 {
-		return nil, errors.New("not enought shares: 0")
+	if sharesCount > MaxShares {
+		return nil, ErrTooManyShares
+	}
+	shareSize := len(shares[0])
+
+	if shareSize < MinShareBytes {
+		return nil, ErrInvalidShare
 	}
 
-	if threshold > MaxShares {
-		return nil, fmt.Errorf("too many shares: %d", shares)
+	if shareSize > MaxShareBytes {
+		return nil, ErrInvalidShare
 	}
 
-	if shares[0] == nil {
-		return nil, fmt.Errorf("share %d is required", 0)
-	}
-	m := len(shares[0])
-	if m == 0 {
-		return nil, fmt.Errorf("invalid share length: %d", m)
-	}
-	if m >= MaxSecretBytes {
-		return nil, fmt.Errorf("invalid share length: %d", m)
-	}
-
-	for i := 1; i < threshold; i++ {
-		if shares[i] == nil {
-			return nil, fmt.Errorf("share %d is required", i)
-		}
-		if len(shares[i]) != m {
-			return nil, fmt.Errorf("share %d size mismatch", i)
+	for i := 1; i < sharesCount; i++ {
+		if len(shares[i]) != shareSize {
+			return nil, ErrInvalidShare
 		}
 	}
 
-	var u = make([]byte, threshold)
+	u := make([]byte, sharesCount)
 	defer erase(u)
 
-	for i := 0; i < threshold; i++ {
+	for i := 0; i < sharesCount; i++ {
 		u[i] = shares[i][0]
-		if u[i] == 0 {
-			return nil, fmt.Errorf("invalid share index 0 at share %d", i)
-		}
-		for j := 0; j < i; j++ {
-			if u[i] == u[j] {
-				return nil, fmt.Errorf("duplicated share index %d", u[i])
-			}
-		}
-
 	}
 
-	var v = make([]byte, threshold)
+	v := make([]byte, sharesCount)
 	defer erase(v)
 
-	m--
+	secretSize := shareSize - 1
+	secret = make([]byte, secretSize)
 
-	secret = make([]byte, m)
-
-	for j := 0; j < m; j++ {
-		for i := 0; i < threshold; i++ {
+	for j := 0; j < secretSize; j++ {
+		for i := 0; i < sharesCount; i++ {
 			v[i] = shares[i][j+1]
 		}
 		secret[j] = interpolate(u, v)
