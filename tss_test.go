@@ -1,12 +1,12 @@
 package tss
 
 import (
-	"testing"
 	"bytes"
-	"encoding/hex"
-	"github.com/antik10ud/go-comb/comb"
-	"fmt"
 	"crypto/rand"
+	"encoding/hex"
+	"fmt"
+	"github.com/antik10ud/go-comb/comb"
+	"testing"
 )
 
 func TestKat(t *testing.T) {
@@ -20,11 +20,37 @@ func TestKat(t *testing.T) {
 func TestCreateSharesErrors(t *testing.T) {
 	testCaseCreateExpect(t, 0, 2, 3, ErrSecretRequired)
 	testCaseCreateExpect(t, 32, 2, 3, ErrInvalidThreshold)
-	testCaseCreateExpect(t, MinSecretBytes-1, 2, 2, ErrSecretTooShort)
+	testCaseCreateExpect(t, 1, 2, 2, nil)
+	//testCaseCreateExpect(t, MinSecretBytes-1, 2, 2, ErrSecretTooShort)
 	testCaseCreateExpect(t, MaxSecretBytes+1, 2, 2, ErrSecretTooLarge)
 	testCaseCreateExpect(t, 32, MaxShares+1, 3, ErrTooManyShares)
 	testCaseCreateExpect(t, 32, MinShares-1, 3, ErrTooFewShares)
 }
+
+func TestCaseCreateThreshold1(t *testing.T) {
+	secret := randomBytes(32)
+	_, err := CreateShares(secret, 3, 1)
+	if err != ErrInvalidThreshold {
+		failNow(t, err)
+	}
+}
+
+func TestCaseCreateThresholdToomany(t *testing.T) {
+	secret := randomBytes(32)
+	_, err := CreateShares(secret, 3, 4)
+	if err != ErrInvalidThreshold {
+		failNow(t, err)
+	}
+}
+
+func dump(secret []byte, shares ShareSet) {
+	println(hex.EncodeToString(secret))
+	for _, x := range shares {
+		println(hex.EncodeToString(x))
+	}
+
+}
+
 func testCaseCreateExpect(t *testing.T, secretSize int, sharesCount int, threshold int, expect error) {
 	secret := randomBytes(secretSize)
 	_, err := CreateShares(secret, sharesCount, threshold)
@@ -41,11 +67,11 @@ func TestRecoverErrors(t *testing.T) {
 	testCaseRecoverExpect(t, ShareSet{randomBytes(MinShareBytes - 1), randomBytes(MinShareBytes - 1)}, ErrInvalidShare)
 	testCaseRecoverExpect(t, ShareSet{randomBytes(MaxShareBytes + 1), randomBytes(MaxShareBytes + 1)}, ErrInvalidShare)
 	testCaseRecoverExpect(t, ShareSet{shares[0], randomBytes(MaxSecretBytes + 1)}, ErrInvalidShare)
-	ss:=make(ShareSet,MaxShares+1)
-	for i:=0;i<MaxShares+1;i++ {
-		ss[i]=randomBytes(32)
+	ss := make(ShareSet, MaxShares+1)
+	for i := 0; i < MaxShares+1; i++ {
+		ss[i] = randomBytes(32)
 	}
-	testCaseRecoverExpect(t,ss, ErrTooManyShares)
+	testCaseRecoverExpect(t, ss, ErrTooManyShares)
 
 }
 
@@ -109,7 +135,7 @@ func ExampleReadme() {
 
 	sharesCount := 5 // number of shares
 
-	threshold := 3 // number of requires shares to recover the secret
+	threshold := 3 // number of required shares to recover the secret
 
 	shares, _ := CreateShares(secret, sharesCount, threshold)
 

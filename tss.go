@@ -1,6 +1,6 @@
 // Package tss provides a core implementation of Threshold Secret Sharing (TSS)  http://tools.ietf.org/html/draft-mcgrew-tss-03
 // It uses a finite field GF(256) instead of Shamir scheme using large integers modulo a large prime number.
-// Max number of shares is 255, max secret key bytes is 65535.
+// Max number of shares is 255, max secret key bytes is 65534.
 package tss
 
 import (
@@ -10,8 +10,8 @@ import (
 
 const (
 	// MinSecretBytes determine the min secret size
-	MinSecretBytes = 32
-	// MaxSecretBytes determine the max secret size in order to limit dos
+	MinSecretBytes = 1
+	// MaxSecretBytes determine the max secret size
 	MaxSecretBytes = 65534
 	// MaxShareBytes determine the max share size
 	MaxShareBytes = MaxSecretBytes + 1
@@ -21,6 +21,8 @@ const (
 	MinShares = 2
 	// MaxShares specify the maximum number of shares possible by algorithm design
 	MaxShares = 255
+	// MinThreshold specify the minimum number of shares required
+	MinThreshold = 2
 )
 
 //Share is a single share
@@ -178,7 +180,7 @@ func CreateShares(secret []byte, sharesCount int, threshold int) (shares ShareSe
 	if sharesCount > MaxShares {
 		return nil, ErrTooManyShares
 	}
-	if threshold > sharesCount {
+	if threshold > sharesCount || threshold < MinThreshold {
 		return nil, ErrInvalidThreshold
 	}
 
